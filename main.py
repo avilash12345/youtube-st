@@ -1,44 +1,46 @@
 import streamlit as st
 from pytubefix import YouTube
+import os
+from pathlib import Path
 
-def on_progress(stream, chunk, bytes_remaining):
-    bytes_downloaded = stream.filesize - bytes_remaining
-    percentage = (bytes_downloaded / stream.filesize) * 100
-    progress_bar.progress(int(percentage))
+# Get system Downloads folder
+downloads_path = str(Path.home() / "Downloads")
 
-def download_video(url, resolution):
-    yt = YouTube(url, on_progress_callback=on_progress)
-    stream = yt.streams.filter(resolution=resolution).first()
-    stream.download()
-    st.success("Video downloaded successfully!")
+st.set_page_config(page_title="YouTube Downloader", layout="centered")
 
-def download_audio(url):
-    yt = YouTube(url, on_progress_callback=on_progress)
-    stream = yt.streams.filter(only_audio=True).first()
-    stream.download()
-    st.success("Audio downloaded successfully!")
+st.title("📥 YouTube Video/Audio Downloader")
 
-st.title("YouTube Downloader")
+url = st.text_input("🔗 Enter YouTube URL")
 
-url = st.text_input("Enter YouTube URL")
+download_type = st.radio("📁 Download as:", ("Video", "Audio"))
+
+# Initialize
+streams = []
+resolutions = []
 
 if url:
-    yt = YouTube(url)
-    st.write(f"Title: {yt.title}")
-    st.write(f"Author: {yt.author}")
-    st.write(f"Length: {yt.length} seconds")
+    try:
+        yt = YouTube(url)
+        st.success(f"🎬 Title: {yt.title}")
 
-    download_type = st.selectbox("Select download type", ["Video", "Audio"])
+        if download_type == "Video":
+            streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
+            resolutions = [stream.resolution for stream in streams]
+        else:
+            streams = yt.streams.filter(only_audio=True).order_by('abr').desc()
+            resolutions = [stream.abr for stream in streams]
 
-    if download_type == "Video":
-        resolutions = [stream.resolution for stream in yt.streams.filter(progressive=True)]
-        resolution = st.selectbox("Select resolution", resolutions)
-        progress_bar = st.progress(0)
-        if st.button("Download Video"):
-            with st.spinner("Downloading video..."):
-                download_video(url, resolution)
-    elif download_type == "Audio":
-        progress_bar = st.progress(0)
-        if st.button("Download Audio"):
-            with st.spinner("Downloading audio..."):
-                download_audio(url)
+        selected_quality = st.selectbox("🎚️ Select quality:", resolutions)
+
+        if st.button("⬇️ Download"):
+            stream = next((s for s in streams if (s.resolution if download_type == "Video" else s.abr) == selected_quality), None)
+            if stream:
+                st.info("Downloading...")
+                file_path = stream.download(output_path=downloads_path)
+                st.success(f"✅ Downloaded to: {file_path}")
+                with open(file_path, "rb") as file:
+                    st.download_button(label="📂 Save File", data=file, file_name=os.path.basename(file_path))
+            else:
+                st.error("❌ Stream not found for selected quality.")
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
